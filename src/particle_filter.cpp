@@ -24,7 +24,7 @@ using std::normal_distribution;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
   /**
-   * Initialize all particles to first position (GPS-based estimates of x, y, theta with uncertainties and all weights to 1. 
+   * Initialize all particles to first position (GPS-based estimations of x, y, theta with uncertainties) and all weights to 1. 
    * Random Gaussian noise to each particle.
    * http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    * http://www.cplusplus.com/reference/random/default_random_engine/
@@ -39,23 +39,20 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   double gps_theta = theta;
   
   // Add random Gaussian noise to each particle
-  double std_x = std[0];
-  double std_y = std[1];
-  double std_theta = std[2];
-  normal_distribution<double> dist_x(gps_x, std_x);
-  normal_distribution<double> dist_y(gps_y, std_y);
-  normal_distribution<double> dist_theta(theta, std_theta);
+  normal_distribution<double> noisy_x(gps_x, std[0]);
+  normal_distribution<double> noisy_y(gps_y, std[1]);
+  normal_distribution<double> noisy_theta(gps_theta, std[2]);
   
   // Generate particles
   for (int i=0; i<num_particles; i++){
     Particle particle;
     particle.id = i;
-    particle.x = dist_x(gen); // "gen" is the random engine initialized earlier
-    particle.y = dist_y(gen);
-    particle.theta = dist_theta(gen);
+    particle.x = noisy_x(gen); // "gen" is the random engine initialized earlier
+    particle.y = noisy_y(gen);
+    particle.theta = noisy_theta(gen);
     particle.weight = 1.0;
-    particles.push_back(particle);
     
+    particles.push_back(particle);
     weights.push_back(particle.weight);
   }
   is_initialized = true;
@@ -74,7 +71,8 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
   {
       Particle particle = particles[i];
 
-      //Instead of a hard check of 0, adding a check for very low value of yaw_rate
+      // If-Else block because there are two different methods of calculating position after motion depending on yaw rate. If it equals 0, then you can use known equations for constant velocity motion. 
+      // Instead of a hard check of 0, adding a check for very low value of yaw_rate
       if (fabs(yaw_rate) < 0.0001) {
           particle.x = particle.x + velocity * delta_t * cos(particle.theta);
           particle.y = particle.y + velocity * delta_t * sin(particle.theta);
@@ -86,13 +84,14 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
           particle.theta = particle.theta + (yaw_rate * delta_t);
       }
 
-      std::normal_distribution<double> dist_x(particle.x, std_pos[0]);
-      std::normal_distribution<double> dist_y(particle.y, std_pos[1]);
-      std::normal_distribution<double> dist_theta(particle.theta, std_pos[2]);
+      // Adding random Gaussian noise
+      std::normal_distribution<double> noisy_x(particle.x, std_pos[0]);
+      std::normal_distribution<double> noisy_y(particle.y, std_pos[1]);
+      std::normal_distribution<double> noisy_theta(particle.theta, std_pos[2]);
 
-      particles[i].x = dist_x(gen);
-      particles[i].y = dist_y(gen);
-      particles[i].theta = dist_theta(gen);
+      particles[i].x = noisy_x(gen);
+      particles[i].y = noisy_y(gen);
+      particles[i].theta = noisy_theta(gen);
     }
 }
 
@@ -100,11 +99,9 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
                                      vector<LandmarkObs>& observations) {
   /**
    * Associate observations to landmarks.
-   * Find the predicted measurement that is closest to the observed measurement and assign it to this particular landmark.
    * NOTE: This method is useful as a helper during the updateWeights phase.
    */
   
-  // predicted is a particle "P" estimated position to all lank marks
   unsigned int numObservations = observations.size();
   unsigned int numPredictions = predicted.size();
   
@@ -126,53 +123,67 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
                                    const vector<LandmarkObs> &observations, 
-                                   const Map &map_landmarks) {
+                                   const Map &map_landmarks)
+{
   /**
-   * Updates the weights of each particle using a mult-variate Gaussian 
-   *   distribution.
+   * Updates the weights of each particle using a mult-variate Gaussian distribution.
    * Observations are given in the VEHICLE'S coordinate system. 
    * Particles are located according to the MAP'S coordinate system. 
    * We need to transform between the two systems. A homogenous transformation performs rotation and translation.
    */
   
-  for (int i = 0; i < particles.size(); ++i)
+  for (unsigned int i = 0; i < particles.size(); ++i)
     {
-        Particle particle = particles[i];
-        double prob = 1.0;
+    Particle particle = particles[i];
+    double prob = 1.0;
 
-        for (int j = 0; j < observations.size(); j++)
+        for (unsigned int j = 0; j < observations.size(); j++)
         {
-            // Homogenous Transformation 
-            double trans_x = particle.x + (cos(particle.theta) * observations[j].x) - (sin(particle.theta) * observations[j].y);
-            double trans_y = particle.y + (sin(particle.theta) * observations[j].x) + (cos(particle.theta) * observations[j].y);
+            // Homogenous Transformation (transforms observations from vehicle's coord. system to map's coordinate system)
+            double x_m = particle.x + (cos(particle.theta) * observations[j].x) - (sin(particle.theta) * observations[j].y); // x_m >> transformed observation (TOBS) in x >> this means it is map coordinates
+            double y_m = particle.y + (sin(particle.theta) * observations[j].x) + (cos(particle.theta) * observations[j].y); // y_m >> transformed observation (TOBS) in y >> this means it is map coordinates
 
             std::vector<Map::single_landmark_s> landmark_list = map_landmarks.landmark_list;
-            double land_x;
-            double land_y;
+            double land_x; // x value of landmark
+            double land_y; // y value of landmark
             double max_val = 2 * sensor_range;
-            for (int k = 0; k < landmark_list.size(); k++)
+            for (unsigned int k = 0; k < landmark_list.size(); k++)
             {
                 // Calculate distance between particle and landmarks
                 double local_land_x = landmark_list[k].x_f;
                 double local_land_y = landmark_list[k].y_f;
-                double distance = dist(trans_x, trans_y, local_land_x, local_land_y);
+                double distance = dist(x_m, y_m, local_land_x, local_land_y);
                 if ((distance <= sensor_range) && (distance <= max_val))
                 {
-                    land_x = local_land_x;
-                    land_y = local_land_y;
-                    max_val = distance;
+                  // Calculate multivariate Gaussian normal distribution
+                  land_x = local_land_x;
+                  land_y = local_land_y;
+                  max_val = distance;
+                  prob = multiv_prob(std_landmark[0], std_landmark[1], x_m, y_m, land_x, land_y);
+                  particles[i].weight = prob;
+                  weights[i] = prob;
                 }
             }
-            // Calculate multivariate Gaussian normal distribution
-            double prob *= calculate_multivariate_normal_distribution(std_landmark[0], std_landmark[1], trans_x, trans_y, land_x, land_y);
-
         }
-        particles[i].weight = prob;
-        weights[i] = prob;
     }
+}
 
-  
-  
+double multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs,
+                   double mu_x, double mu_y) {
+  // calculate normalization term
+  double gauss_norm;
+  gauss_norm = 1 / (2 * M_PI * sig_x * sig_y);
+
+  // calculate exponent
+  double exponent;
+  exponent = (pow(x_obs - mu_x, 2) / (2 * pow(sig_x, 2)))
+               + (pow(y_obs - mu_y, 2) / (2 * pow(sig_y, 2)));
+    
+  // calculate weight using normalization terms and exponent
+  double weight;
+  weight = gauss_norm * exp(-exponent);
+    
+  return weight;
 }
 
 void ParticleFilter::resample() {
@@ -193,21 +204,6 @@ void ParticleFilter::resample() {
         resampled_particles.push_back(particle);
     }
     particles = resampled_particles;
-
-}
-
-double ParticleFilter::calculate_multivariate_normal_distribution(double std_landmark_x, double std_landmark_y,
-    double observation_x, double observation_y, double map_x, double map_y)
-{
-    // Multivariate Gaussian probability density
-
-    double result = 0.0;
-    double term1 = 1 / (2 * M_PI * std_landmark_x *  std_landmark_y);
-    double term2 = pow((observation_x - map_x), 2.0) / (2 * pow(std_landmark_x, 2.0));
-    double term3 = pow((observation_y - map_y), 2.0) / (2 * pow(std_landmark_y, 2.0));
-    double exponent_value = exp(-(term2 + term3));
-    result = term1 * exponent_value;
-    return result;
 
 }
 
