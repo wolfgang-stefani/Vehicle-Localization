@@ -75,6 +75,9 @@ class ParticleFilter {
    * @param observations Vector of landmark observations
    * @param map Map class containing map landmarks
    */
+  
+  double calculate_multivariate_normal_distribution(double std_landmark_x, double std_landmark_y, double observation_x, double observation_y, double map_x, double map_y);
+  
   void updateWeights(double sensor_range, double std_landmark[], 
                      const std::vector<LandmarkObs> &observations,
                      const Map &map_landmarks);
