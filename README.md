@@ -1,4 +1,5 @@
 # Vehicle-Localization
+![](readme_images/particle_filter.gif)
 
 ## Overview
 This repository contains all the code for a localization software for autonomous vehicles. The initial location can be a noisy GPS estimate. For more precise localization lots of (noisy) sensor and control data can be used. Both the initial location and the sensor and control data are simulated/provided by a simulator while running the code (see below in the section `Running the Code`.
